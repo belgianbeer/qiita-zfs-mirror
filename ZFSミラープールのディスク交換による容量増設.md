@@ -168,6 +168,8 @@ errors: No known data errors
 $
 ```
 # ★ここまで書いた
+
+test 
 開始直後は終了予想時間は表示されません。
 ```
 $ zpool status zvol0
