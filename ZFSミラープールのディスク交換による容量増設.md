@@ -21,7 +21,8 @@ $
 
 ```
 $ zpool list -v zvol0
-NAME             SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  zvol0           1.81T  1.49T   333G        -         -     5%    82%  1.00x    ONLINE  -
+NAME             SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  
+zvol0           1.81T  1.49T   333G        -         -     5%    82%  1.00x    ONLINE  -
   mirror-0      1.81T  1.49T   333G        -         -     5%  82.1%      -    ONLINE
     gpt/ndisk2      -      -      -        -         -      -      -      -    ONLINE
     gpt/ndisk1      -      -      -        -         -      -      -      -    ONLINE
