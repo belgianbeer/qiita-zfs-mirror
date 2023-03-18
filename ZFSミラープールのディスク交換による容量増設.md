@@ -3,7 +3,7 @@
 
 HDD側の使用量がそろそろ80%を超えているのと使用開始から10年以上経過していることがあり、さすがにそろそろ交換した方が良いという気になり、6TBのHDDを2台用意して交換しました。この記事は実際にHDDを交換したときの記録です。
 
-なおZFSは、空き容量が少なくなると他の多くのファイルシステムより極端に速度が低下する傾向があるため、容量ギリギリまで利用するのは得策ではありません。何％までいくとパフォーマンスが低下してくるのかについては、ワークセットとの兼ね合いなので単純には判断できないですけどね。
+なおZFSでは空き容量が少なくなると他の多くのファイルシステムより極端に速度が低下する傾向があるため、容量ギリギリまで利用するのは得策ではありません。どのぐらいまで使うとどうパフォーマンスが低下するのかに関してはワークセットとの兼ね合いなので単純に言うことはできないですが、他のファイルシステムなら影響の無い空き容量であってZFSだと影響が出る場合があるということを覚えておきましょう。
 
 # 事前の確認
 
@@ -64,7 +64,7 @@ ZFSに限らずミラー(RAID 1)構成のHDDを2台とも入れ替える手順�
 * 新しいHDDでミラーを用意して既存のミラーからデータコピー後に入れ替える(あるいは先に交換してから元のディスクからデータを戻す)
 * 片方のHDDを交換して一旦ミラーの機能でデータを同期して、完了後にもう一方のHDDを交換して改めてデータ同期する
 
-前者の方法であればデータコピーは1回で済みますが同時に4台のHDDを接続する必要があります。この場合HDDはUSBで接続しても構わないのですが、USB 2.0の転送速度では時間がかかりすぎるため最低でもUSB 3.0にしたいところです。対象サーバーのUSBは2.0であるのと追加のHDDを同時に置くスペースも無いため、筆者の場合は後者の1台づつ交換する方法を取りました。
+前者の方法であればデータコピーは1回で済みますが同時に4台のHDDを接続する必要があります。この場合HDDはUSBで接続しても構わないのですが、USB 2.0の転送速度では時間がかかりすぎるため最低でもUSB 3.0にしたいところです。対象サーバーのUSBは2.0であるのと追加のHDDを同時に置くスペースも無いため、筆者の場合は後者の1台づつ交換する方法を取りました。また後者の方法であれば(パフォーマンス低下するものの)通常通りHDDを使い続けることができるというメリットもあります。
 
 
 # HDDの交換
@@ -169,7 +169,7 @@ config:
 errors: No known data errors
 $
 ```
-statusのところでresilver中と表示されていて、同期中であることを示しています。ZFSを使うようになって「resilver」という言葉を知ったのですが、銀の装飾品を磨く意味のようです。つまりここではRAID構成を作り直してるってことになります。またscanには処理量や予想時間が表示されるのですが、「no estimated completion time」と表示しているように、同期開始直後は予想時間は表示されません。少し経つと終了予想時間が表示されるようになりますが、経験的にこの段階ではまったくあてになりません。
+statusのところでresilver中と表示されていて、同期中であることを示しています。ZFSを使うようになって「resilver」という言葉を知ったのですが、銀の装飾品を磨く意味のようです。つまりここではRAID構成を作り直してるってことになります。またscanには処理量や予想時間が表示されるのですが「no estimated completion time」と表示しているように、同期開始直後は予想時間は表示されません。少し経つと終了予想時間が表示されるようになりますが、経験的にこの段階ではまったくあてになりません。
 ```
 $ zpool status zvol0
 ===== <省略> =====
@@ -200,6 +200,35 @@ $ zpool status zvol0
         196G resilvered, 12.85% done, 06:09:14 to go
 ===== <省略> =====
 ```
+
+しかしながら、結局1台目のミラーの同期には15時間以上かかりました。以下は1台目の同期が完了したときにzpool listとstatusを確認した結果です。
+
+```
+$ zpool list -v
+NAME             SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
+zroot            228G  16.8G   211G        -         -    12%     7%  1.00x    ONLINE  -
+  ada0p3         228G  16.8G   211G        -         -    12%  7.37%      -    ONLINE
+zvol0           1.81T  1.49T   333G        -         -     5%    82%  1.00x    ONLINE  -
+  mirror-0      1.81T  1.49T   333G        -         -     5%  82.1%      -    ONLINE
+    gpt/sdisk1      -      -      -        -         -      -      -      -    ONLINE
+    gpt/ndisk1      -      -      -        -         -      -      -      -    ONLINE
+$ zpool status zvol0
+  pool: zvol0
+ state: ONLINE
+  scan: resilvered 1.49T in 15:34:45 with 0 errors on Sun Jan 29 06:00:29 2023
+config:
+
+        NAME            STATE     READ WRITE CKSUM
+        zvol0           ONLINE       0     0     0
+          mirror-0      ONLINE       0     0     0
+            gpt/sdisk1  ONLINE       0     0     0
+            gpt/ndisk1  ONLINE       0     0     0
+
+errors: No known data errors
+$
+```
+## 2台目のHDDの同期
+
 
 
 ```
@@ -275,32 +304,6 @@ errors: No known data errors
 $
 ```
 
-結局15時間以上かかって終了
-
-```
-$ zpool list -v
-NAME             SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
-zroot            228G  16.8G   211G        -         -    12%     7%  1.00x    ONLINE  -
-  ada0p3         228G  16.8G   211G        -         -    12%  7.37%      -    ONLINE
-zvol0           1.81T  1.49T   333G        -         -     5%    82%  1.00x    ONLINE  -
-  mirror-0      1.81T  1.49T   333G        -         -     5%  82.1%      -    ONLINE
-    gpt/sdisk1      -      -      -        -         -      -      -      -    ONLINE
-    gpt/ndisk1      -      -      -        -         -      -      -      -    ONLINE
-$ zpool status zvol0
-  pool: zvol0
- state: ONLINE
-  scan: resilvered 1.49T in 15:34:45 with 0 errors on Sun Jan 29 06:00:29 2023
-config:
-
-        NAME            STATE     READ WRITE CKSUM
-        zvol0           ONLINE       0     0     0
-          mirror-0      ONLINE       0     0     0
-            gpt/sdisk1  ONLINE       0     0     0
-            gpt/ndisk1  ONLINE       0     0     0
-
-errors: No known data errors
-$
-```
 
  残りのディスクを交換
 
