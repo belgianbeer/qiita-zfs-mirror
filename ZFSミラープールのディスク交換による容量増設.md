@@ -1,9 +1,9 @@
 # はじめに
-筆者自宅のFreeBSDサーバーには、ストレージとしてSSD(256GB)が1台、HDD(2TB)が2台接続してあり全てZFSで構成して主にファイルサーバーとして利用しています。これらはSSDをOS用、HDDをデータ用として割り当てていますが、HDDが2台あるのはZFSでミラーとしているため容量としては1台分となります。
+筆者自宅のFreeBSDサーバーには、ストレージとしてSSD(256GB)が1台、HDD(2TB)が2台接続してあり全てZFSで構成して主にファイルサーバーとして利用しています。それぞれのディスクの役割は、はSSDをOS用、HDDをデータ用として割り当てています。HDDが2台あるのはZFSでミラーを構成しているため容量としては単純に1台分となります。
 
-HDD側の使用量がそろそろ80%を超えてきているのと使用開始から10年以上経過していることがあり、さすがにそろそろ交換した方が良いという判断で6TBのHDDを2台用意して交換しました。この記事は実際にHDDを交換したときの記録です。
+HDD側の使用量がそろそろ80%を超えているのと使用開始から10年以上経過していることがあり、さすがにそろそろ交換した方が良いという気になり、6TBのHDDを2台用意して交換しました。この記事は実際にHDDを交換したときの記録です。
 
-なおZFSは、空き容量が少なくなると他の多くのファイルシステムより極端に速度が低下する傾向があるため、容量ギリギリまで利用するのは得策ではありません。
+なおZFSは、空き容量が少なくなると他の多くのファイルシステムより極端に速度が低下する傾向があるため、容量ギリギリまで利用するのは得策ではありません。何％までいくとパフォーマンスが低下してくるのかについては、ワークセットとの兼ね合いなので単純には判断できないですけどね。
 
 # 事前の確認
 
@@ -43,7 +43,7 @@ errors: No known data errors
 $
 ```
 
-これらからディスクのndisk1とndisk2のパーティションでミラーを構成してあることが分かります。3台のディスクはada0(SSD)、ada1(HDD)、ada2(HDD)という構成なので、HDDのパーティション構成を確認します。
+これらからラベルがndisk1とndisk2のパーティションでミラーを構成してあることが分かります。3台のディスクはada0(SSD)、ada1(HDD)、ada2(HDD)という構成なので、HDDのパーティション構成を確認します。
 
 ```
 $ gpart show -l ada1 ada2
@@ -55,26 +55,25 @@ $ gpart show -l ada1 ada2
 
 $
 ```
-ada2、ada3はパーティションを作成するときにGPTで初期化して、ada1にはndisk1、ada2にはndisk2と名前をつけてありました。
+ada1、ada2はパーティションをGPTで初期化して、ada1にはndisk1、ada2にはndisk2と名前をつけてあることがわかります。
 
 # ミラー構成でのディスク交換の手順
 
-ミラー(RAID 1)構成のHDDを2台とも入れ替える手順としては、ざっくり次の2種類の手順が考えられます。
+ZFSに限らずミラー(RAID 1)構成のHDDを2台とも入れ替える手順としては、ざっくり次の2種類の手順が考えられます。
 
 * 新しいHDDでミラーを用意して既存のミラーからデータコピー後に入れ替える(あるいは先に交換してから元のディスクからデータを戻す)
 * 片方のHDDを交換して一旦ミラーの機能でデータを同期して、完了後にもう一方のHDDを交換して改めてデータ同期する
 
-前者の方法であればデータコピーは1回で済みますが同時に4台のHDDを接続する必要があります。この場合HDDはUSBで接続しても構わないですが、USB 2.0の転送速度では時間がかかりすぎるため最低でもUSB 3.0にしたいところです。実際このサーバーにはUSBは2.0であるため、筆者の場合は後者の1台づつ交換する方法を取りました。
+前者の方法であればデータコピーは1回で済みますが同時に4台のHDDを接続する必要があります。この場合HDDはUSBで接続しても構わないのですが、USB 2.0の転送速度では時間がかかりすぎるため最低でもUSB 3.0にしたいところです。対象サーバーのUSBは2.0であるのと追加のHDDを同時に置くスペースも無いため、筆者の場合は後者の1台づつ交換する方法を取りました。
 
-# 1台目のHDDの交換
 
-まず1台目のHDDの交換となりますが、ndisk2のパーティションのあるHDDを外して交換します。この場合サーバーをシャットダウンして電源を切り、古いHDDを撤去して新しいHDD接続後に電源を入れます。
-
+# HDDの交換
 ## HDD交換時の注意
 
-HDDを交換する場合に注意することは、電源を切る前にZFSプールの操作をおこなって、例えば `zpool detach zvol0 gpt/ndisk2` などを **実行してはいけません**。なぜならdetachでndisk2をプールから外した場合、ndisk2内のデータを消去したことになり、万が一新しいディスクとのデータの同期中にndisk1にエラーが発生した場合にndisk2に交換して同期をやり直すことができなくなってしまいます。電源を切ってndisk2を外すだけであればndisk2内のデータはndisk1と同じままになるので、いざというときにndisk2を使ってやり直しができます。
+ZFSのmirrorでHDDを交換する場合に注意することは、電源を切る前にZFSプールの操作をおこなって、例えば `zpool detach zvol0 gpt/ndisk2` などを **実行してはいけません**。なぜならdetachでndisk2をプールから外した場合、ndisk2内のデータを消去したことになり、万が一新しいディスクとのデータの同期中にndisk1にエラーが発生した場合にndisk2に交換して同期をやり直すことができなくなってしまいます。電源を切ってndisk2を外すだけであればndisk2内のデータはndisk1と同じままになるので、いざというときにndisk2を使ってやり直しができます。
+## 1台目のHDDの交換
 
-ディスクを交換して起動後に zvol0 の状態を確認します。
+まず1台目のHDDの交換ですが、ndisk2のパーティションのあるHDDを外して交換します。この場合サーバーをシャットダウンして電源を切り、古いHDDを撤去して新しいHDD接続後に電源を入れます。起動後に zvol0 の状態を確認します。
 ```
 $ zpool list
 NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
@@ -101,9 +100,9 @@ config:
 
 errors: No known data errors
 ```
-2台のHDDでミラーのはずが片側のgpt/ndisk2が無く1台だけになっているため、HEALTHやSTATEで「DEGRADED」と表示されています。
+2台のHDDでミラーのはずが片側のgpt/ndisk2が無く1台だけになっているため、HEALTHやSTATEで「DEGRADED」と表示されています。statusではndisk2が無くなっていることを示しています。
 
-# ミラー同期前の準備 HDDの初期化
+## ミラー同期前のHDDの準備
 
 ミラーの同期を行うために、新しいディスクをGPTで初期化して、ZFS用のパーティションを用意します。新しいパーティションには古いHDDと区別するためsdisk1と名前をつけました。
 
@@ -135,6 +134,8 @@ $ gpart show -l ada1
 
 $
 ```
+
+## 1台目のHDDの同期
 
 パーティションを用意できたので、旧ndisk2をsdisk1で置き換えます。このための操作は`zpool replace`を使います。
 
@@ -168,81 +169,36 @@ config:
 errors: No known data errors
 $
 ```
-# ★ここまで書いた
-
-test 
-開始直後は終了予想時間は表示されません。
+statusのところでresilver中と表示されていて、同期中であることを示しています。ZFSを使うようになって「resilver」という言葉を知ったのですが、銀の装飾品を磨く意味のようです。つまりここではRAID構成を作り直してるってことになります。またscanには処理量や予想時間が表示されるのですが、「no estimated completion time」と表示しているように、同期開始直後は予想時間は表示されません。少し経つと終了予想時間が表示されるようになりますが、経験的にこの段階ではまったくあてになりません。
 ```
 $ zpool status zvol0
-  pool: zvol0
- state: DEGRADED
-status: One or more devices is currently being resilvered.  The pool will
-        continue to function, possibly in a degraded state.
-action: Wait for the resilver to complete.
+===== <省略> =====
   scan: resilver in progress since Sat Jan 28 14:25:44 2023
         265G scanned at 664M/s, 6.51G issued at 16.3M/s, 1.49T total
         6.51G resilvered, 0.43% done, 1 days 02:27:43 to go
-config:
-
-        NAME                        STATE     READ WRITE CKSUM
-        zvol0                       DEGRADED     0     0     0
-          mirror-0                  DEGRADED     0     0     0
-            replacing-0             DEGRADED     0     0     0
-              12897545936258916783  UNAVAIL      0     0     0  was /dev/gpt/ndisk2
-              gpt/sdisk1            ONLINE       0     0     0  (resilvering)
-            gpt/ndisk1              ONLINE       0     0     0
-
-errors: No known data errors
-$ zpool status zvol0
+===== <省略> =====
+$ 
 ```
+
+さらに時間を置いてから確認すると終了までに14時間程度と表示していました。
 
 ```
 $ zpool status zvol0
-  pool: zvol0
- state: DEGRADED
-status: One or more devices is currently being resilvered.  The pool will
-        continue to function, possibly in a degraded state.
-action: Wait for the resilver to complete.
-  scan: resilver in progress since Sat Jan 28 14:25:44 2023
-        265G scanned at 664M/s, 6.51G issued at 16.3M/s, 1.49T total
-        6.51G resilvered, 0.43% done, 1 days 02:27:43 to go
-config:
-
-        NAME                        STATE     READ WRITE CKSUM
-        zvol0                       DEGRADED     0     0     0
-          mirror-0                  DEGRADED     0     0     0
-            replacing-0             DEGRADED     0     0     0
-              12897545936258916783  UNAVAIL      0     0     0  was /dev/gpt/ndisk2
-              gpt/sdisk1            ONLINE       0     0     0  (resilvering)
-            gpt/ndisk1              ONLINE       0     0     0
-
-errors: No known data errors
-$
-```
-
-
-```
-$ zpool status zvol0
-  pool: zvol0
- state: DEGRADED
-status: One or more devices is currently being resilvered.  The pool will
-        continue to function, possibly in a degraded state.
-action: Wait for the resilver to complete.
+===== <省略> =====
   scan: resilver in progress since Sat Jan 28 14:25:44 2023
         289G scanned at 488M/s, 18.6G issued at 31.4M/s, 1.49T total
         18.6G resilvered, 1.22% done, 13:38:30 to go
-config:
-
-        NAME                        STATE     READ WRITE CKSUM
-        zvol0                       DEGRADED     0     0     0
-          mirror-0                  DEGRADED     0     0     0
-            replacing-0             DEGRADED     0     0     0
-              12897545936258916783  UNAVAIL      0     0     0  was /dev/gpt/ndisk2
-              gpt/sdisk1            ONLINE       0     0     0  (resilvering)
-            gpt/ndisk1              ONLINE       0     0     0
-
-errors: No known data errors
+===== <省略> =====
 $
+```
+1時間後に確認したら残り6時間程度まで減っていました
+```
+$ zpool status zvol0
+===== <省略> =====
+  scan: resilver in progress since Sat Jan 28 14:25:44 2023
+        447G scanned at 140M/s, 196G issued at 61.4M/s, 1.49T total
+        196G resilvered, 12.85% done, 06:09:14 to go
+===== <省略> =====
 ```
 
 
