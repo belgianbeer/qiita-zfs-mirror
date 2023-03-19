@@ -64,13 +64,12 @@ ZFSに限らずミラー(RAID 1)構成のHDDを2台とも入れ替える手順�
 * 新しいHDDでミラーを用意して既存のミラーからデータコピー後に入れ替える(あるいは先に交換してから元のディスクからデータを戻す)
 * 片方のHDDを交換して一旦ミラーの機能でデータを同期して、完了後にもう一方のHDDを交換して改めてデータ同期する
 
-前者の方法であればデータコピーは1回で済みますが同時に4台のHDDを接続する必要があります。この場合HDDはUSBで接続しても構わないのですが、USB 2.0の転送速度では時間がかかりすぎるため最低でもUSB 3.0にしたいところです。対象サーバーのUSBは2.0であるのと追加のHDDを同時に置くスペースも無いため、筆者の場合は後者の1台づつ交換する方法を取りました。また後者の方法であれば(パフォーマンス低下するものの)通常通りHDDを使い続けることができるというメリットもあります。
-
+前者の方法であればデータコピーは1回で済みますが同時に4台のHDDを接続する必要があります。この場合HDDはUSBで接続しても構わないのですが、USB 2.0の転送速度では時間がかかりすぎるため最低でもUSB 3.0にしたいところです。対象サーバーのUSBは2.0であるのと追加のHDDを同時に置くスペースも無いため、筆者の場合は後者の1台づつ交換する方法を取りました。またこの方法であれば(パフォーマンスの低下はあるものの)同期中も通常通りHDDを使い続けることができるというメリットもあります。
 
 # HDDの交換
 ## HDD交換時の注意
 
-ZFSのmirrorでHDDを交換する場合に注意することは、電源を切る前にZFSプールの操作をおこなって、例えば `zpool detach zvol0 gpt/ndisk2` などを **実行してはいけません**。なぜならdetachでndisk2をプールから外した場合、ndisk2内のデータを消去したことになり、万が一新しいディスクとのデータの同期中にndisk1にエラーが発生した場合にndisk2に交換して同期をやり直すことができなくなってしまいます。電源を切ってndisk2を外すだけであればndisk2内のデータはndisk1と同じままになるので、いざというときにndisk2を使ってやり直しができます。
+ZFSのmirrorでHDDを交換する場合に注意することは、電源を切る前にZFSプールの操作、例えば `zpool detach zvol0 gpt/ndisk2` などを **実行してはいけません**。なぜならこのようなdetach操作でndisk2をプールから外した場合、ndisk2内のデータを消去した扱いになり、万が一新しいディスクとのデータの同期中にndisk1にエラーが発生した場合にndisk2に交換して同期をやり直すことができなくなってしまいます。電源を切ってndisk2を外すだけであればndisk2内のデータはndisk1と同じままになるので、いざというときにndisk2を使ってやり直しができます。
 ## 1台目のHDDの交換
 
 まず1台目のHDDの交換ですが、ndisk2のパーティションのあるHDDを外して交換します。この場合サーバーをシャットダウンして電源を切り、古いHDDを撤去して新しいHDD接続後に電源を入れます。起動後に zvol0 の状態を確認します。
@@ -137,7 +136,7 @@ $
 
 ## 1台目のHDDの同期
 
-パーティションを用意できたので、旧ndisk2をsdisk1で置き換えます。このための操作は`zpool replace`を使います。
+交換用パーティションを用意できたので、旧ndisk2をsdisk1で置き換えます。このための操作は`zpool replace`を使います。
 
 ```
 $ zpool replace zvol0 12897545936258916783 gpt/sdisk1
@@ -169,7 +168,9 @@ config:
 errors: No known data errors
 $
 ```
-statusのところでresilver中と表示されていて、同期中であることを示しています。ZFSを使うようになって「resilver」という言葉を知ったのですが、銀の装飾品を磨く意味のようです。つまりここではRAID構成を作り直してるってことになります。またscanには処理量や予想時間が表示されるのですが「no estimated completion time」と表示しているように、同期開始直後は予想時間は表示されません。少し経つと終了予想時間が表示されるようになりますが、経験的にこの段階ではまったくあてになりません。
+status:でresilver中と表示されていて、同期中であることを示しています。ところでこの「resilver」という言葉をZFSを使うようになって知ったのですが、銀の装飾品を磨く意味のようで、ZFSではRAID構成を作り直してる意味で使われていてなるほどなと思いました。action:にはresilverが終わるのを待てと指示が表示されています。そしてscan:には処理量や予想時間が表示されるのですが`no estimated completion time`と表示しているように、同期開始直後は予想時間は表示されません。
+
+少し経つと終了予想時間が表示されるようになりますが、経験的にこの段階ではまったくあてになりません。
 ```
 $ zpool status zvol0
 ===== <省略> =====
@@ -191,6 +192,7 @@ $ zpool status zvol0
 ===== <省略> =====
 $
 ```
+
 1時間後に確認したら残り6時間程度まで減っていました
 ```
 $ zpool status zvol0
@@ -201,13 +203,11 @@ $ zpool status zvol0
 ===== <省略> =====
 ```
 
-しかしながら、結局1台目のミラーの同期には15時間以上かかりました。以下は1台目の同期が完了したときにzpool listとstatusを確認した結果です。
+しかしながら、1台目のミラーの同期には結局15時間半程かかりました。以下は1台目の同期が完了したときにzpool listとstatusを確認した結果です。
 
 ```
-$ zpool list -v
+$ zpool list -v zvol0
 NAME             SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
-zroot            228G  16.8G   211G        -         -    12%     7%  1.00x    ONLINE  -
-  ada0p3         228G  16.8G   211G        -         -    12%  7.37%      -    ONLINE
 zvol0           1.81T  1.49T   333G        -         -     5%    82%  1.00x    ONLINE  -
   mirror-0      1.81T  1.49T   333G        -         -     5%  82.1%      -    ONLINE
     gpt/sdisk1      -      -      -        -         -      -      -      -    ONLINE
@@ -229,7 +229,181 @@ $
 ```
 ## 2台目のHDDの同期
 
+2台目のHDDの交換と同期の手順は1台目とまったく同じなので、説明は省略してコマンドの実行結果のみを例示しておきます。
 
+2台目を交換して起動したところ。
+```
+$ zpool status zvol0
+  pool: zvol0
+ state: DEGRADED
+status: One or more devices could not be opened.  Sufficient replicas exist for
+        the pool to continue functioning in a degraded state.
+action: Attach the missing device and online it using 'zpool online'.
+   see: https://openzfs.github.io/openzfs-docs/msg/ZFS-8000-2Q
+  scan: resilvered 1.49T in 15:34:45 with 0 errors on Sun Jan 29 06:00:29 2023
+config:
+
+        NAME                      STATE     READ WRITE CKSUM
+        zvol0                     DEGRADED     0     0     0
+          mirror-0                DEGRADED     0     0     0
+            gpt/sdisk1            ONLINE       0     0     0
+            13953654332474917058  UNAVAIL      0     0     0  was /dev/gpt/ndisk1
+
+errors: No known data errors
+$
+```
+
+パーティションの準備
+
+```
+# gpart create -s gpt ada2
+ada2 created
+# gpart show ada2
+=>         40  11721045088  ada2  GPT  (5.5T)
+           40  11721045088        - free -  (5.5T)
+
+# gpart add -t freebsd-zfs -a 4k -l sdisk2 ada2
+ada2p1 added
+# gpart show ada2
+=>         40  11721045088  ada2  GPT  (5.5T)
+           40  11721045088     1  freebsd-zfs  (5.5T)
+
+# gpart show -l ada2
+=>         40  11721045088  ada2  GPT  (5.5T)
+           40  11721045088     1  sdisk2  (5.5T)
+
+#
+```
+
+2回目の同期開始
+```
+$ zpool replace zvol0 13953654332474917058 gpt/sdisk2
+$ zpool status zvol0
+  pool: zvol0
+ state: DEGRADED
+status: One or more devices is currently being resilvered.  The pool will
+        continue to function, possibly in a degraded state.
+action: Wait for the resilver to complete.
+  scan: resilver in progress since Sun Jan 29 13:38:15 2023
+        12.8G scanned at 692M/s, 492K issued at 25.9K/s, 1.49T total
+        0B resilvered, 0.00% done, no estimated completion time
+config:
+
+        NAME                        STATE     READ WRITE CKSUM
+        zvol0                       DEGRADED     0     0     0
+          mirror-0                  DEGRADED     0     0     0
+            gpt/sdisk1              ONLINE       0     0     0
+            replacing-1             DEGRADED     0     0     0
+              13953654332474917058  UNAVAIL      0     0     0  was /dev/gpt/ndisk1
+              gpt/sdisk2            ONLINE       0     0     0
+
+errors: No known data errors
+```
+
+2回目の同期は14時間程でした。
+
+```
+$ zpool status zvol0
+  pool: zvol0
+ state: ONLINE
+  scan: resilvered 1.49T in 14:11:00 with 0 errors on Mon Jan 30 03:49:15 2023
+config:
+
+        NAME            STATE     READ WRITE CKSUM
+        zvol0           ONLINE       0     0     0
+          mirror-0      ONLINE       0     0     0
+            gpt/sdisk1  ONLINE       0     0     0
+            gpt/sdisk2  ONLINE       0     0     0
+
+errors: No known data errors
+$
+```
+```
+$ zpool list
+NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
+zroot   228G  16.8G   211G        -         -    12%     7%  1.00x    ONLINE  -
+zvol0  1.81T  1.49T   333G        -     3.62T     5%    82%  1.00x    ONLINE  -
+$
+```
+
+
+# 領域の拡張
+
+無事HDD交換が終わってめでたしめでたしの前にもう一つ作業が残っています。このままではHDDの交換だけで、2TB→6TBの容量拡張が有効になっていまん。あらためてzvol0の容量を確認するとSIZEは1.81Tと、HDD交換前と同じ数字を示しています。
+
+```
+$ zpool list zvol0
+NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
+zvol0  1.81T  1.49T   333G        -     3.62T     5%    82%  1.00x    ONLINE  -
+$
+```
+
+この容量拡張を行うための設定がZFSプールのautoexpandプロパティです。まず現状のautoexpandの値を確認すると次のようにデフォルトのoffとなっています。
+
+```
+$ zpool get autoexpand zvol0
+NAME   PROPERTY    VALUE   SOURCE
+zvol0  autoexpand  off     default
+$
+```
+
+autoexpandをonにしても、それだけでは容量は変わりません。
+
+```
+$ zpool set autoexpand=on zvol0
+$
+$ zpool get autoexpand zvol0
+NAME   PROPERTY    VALUE   SOURCE
+zvol0  autoexpand  on      local
+$
+$ zpool list zvol0
+NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
+zvol0  1.81T  1.49T   333G        -     3.62T     5%    82%  1.00x    ONLINE  -
+$
+```
+
+autoexpand=onを有効にするには`zpool online -e`を実行する必要があります。
+
+```
+$ zpool online -e zvol0
+missing device name
+usage:
+        online [-e] <pool> <device> ...
+$
+```
+デバイス名が無いと言われてしまいました😅。
+online -e のときは一緒にデバイス名を指定する必要があるのですが、今回の場合はプール内のデバイス名のどれか1つを指定すれば問題ありません。
+あらためてデバイス名まで指定して実行すると、次のように容量が5.45TBまで増えていることがわかります。
+
+```
+$ zpool online -e zvol0 gpt/sdisk1
+$
+$ zpool list zvol0
+NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
+zvol0  5.45T  1.49T  3.97T        -         -     1%    27%  1.00x    ONLINE  -
+$
+```
+今回の作業ではautoexpandプロパティの変更をHDDの交換後に行いましたが、HDDの交換前に設定しておくと2台目の同期完了と同時に容量が拡張されるようになります。
+
+参考データ
+```
+$ zpool status zvol0
+  pool: zvol0
+ state: ONLINE
+  scan: resilvered 1.49T in 06:49:36 with 0 errors on Mon Jan 30 17:58:41 2023
+config:
+
+        NAME            STATE     READ WRITE CKSUM
+        zvol0           ONLINE       0     0     0
+          mirror-0      ONLINE       0     0     0
+            gpt/ndisk2  ONLINE       0     0     0
+            gpt/ndisk1  ONLINE       0     0     0
+
+errors: No known data errors
+$
+```
+
+# 終わり
 
 ```
 minmin@brunehaut(2)$ zpool iostat  -v zvol0 1
@@ -305,153 +479,6 @@ $
 ```
 
 
- 残りのディスクを交換
-
-```
-$ zpool status zvol0
-  pool: zvol0
- state: DEGRADED
-status: One or more devices could not be opened.  Sufficient replicas exist for
-        the pool to continue functioning in a degraded state.
-action: Attach the missing device and online it using 'zpool online'.
-   see: https://openzfs.github.io/openzfs-docs/msg/ZFS-8000-2Q
-  scan: resilvered 1.49T in 15:34:45 with 0 errors on Sun Jan 29 06:00:29 2023
-config:
-
-        NAME                      STATE     READ WRITE CKSUM
-        zvol0                     DEGRADED     0     0     0
-          mirror-0                DEGRADED     0     0     0
-            gpt/sdisk1            ONLINE       0     0     0
-            13953654332474917058  UNAVAIL      0     0     0  was /dev/gpt/ndisk1
-
-errors: No known data errors
-$
-```
-
-ディスクを用意
-
-```
-# gpart create -s gpt ada2
-ada2 created
-# gpart show ada2
-=>         40  11721045088  ada2  GPT  (5.5T)
-           40  11721045088        - free -  (5.5T)
-
-# gpart add -t freebsd-zfs -a 4k -l sdisk2 ada2
-ada2p1 added
-# gpart show ada2
-=>         40  11721045088  ada2  GPT  (5.5T)
-           40  11721045088     1  freebsd-zfs  (5.5T)
-
-# gpart show -l ada2
-=>         40  11721045088  ada2  GPT  (5.5T)
-           40  11721045088     1  sdisk2  (5.5T)
-
-#
-```
-
-```
-$ zpool replace zvol0 13953654332474917058 gpt/sdisk2
-$ zpool status zvol0
-  pool: zvol0
- state: DEGRADED
-status: One or more devices is currently being resilvered.  The pool will
-        continue to function, possibly in a degraded state.
-action: Wait for the resilver to complete.
-  scan: resilver in progress since Sun Jan 29 13:38:15 2023
-        12.8G scanned at 692M/s, 492K issued at 25.9K/s, 1.49T total
-        0B resilvered, 0.00% done, no estimated completion time
-config:
-
-        NAME                        STATE     READ WRITE CKSUM
-        zvol0                       DEGRADED     0     0     0
-          mirror-0                  DEGRADED     0     0     0
-            gpt/sdisk1              ONLINE       0     0     0
-            replacing-1             DEGRADED     0     0     0
-              13953654332474917058  UNAVAIL      0     0     0  was /dev/gpt/ndisk1
-              gpt/sdisk2            ONLINE       0     0     0
-
-errors: No known data errors
-```
-
-多分2回目の同期は1回目よりはかなり短時間になると予想しているが如何に
 
 
-```
-$ zpool status zvol0
-  pool: zvol0
- state: ONLINE
-  scan: resilvered 1.49T in 14:11:00 with 0 errors on Mon Jan 30 03:49:15 2023
-config:
 
-        NAME            STATE     READ WRITE CKSUM
-        zvol0           ONLINE       0     0     0
-          mirror-0      ONLINE       0     0     0
-            gpt/sdisk1  ONLINE       0     0     0
-            gpt/sdisk2  ONLINE       0     0     0
-
-errors: No known data errors
-$
-```
-結局 14時間程かかって終了したようです。
-```
-$ zpool list
-NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
-zroot   228G  16.8G   211G        -         -    12%     7%  1.00x    ONLINE  -
-zvol0  1.81T  1.49T   333G        -     3.62T     5%    82%  1.00x    ONLINE  -
-$
-```
-
-
-領域の拡張
-
-```
-$ zpool list zvol0
-NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
-zvol0  1.81T  1.49T   333G        -     3.62T     5%    82%  1.00x    ONLINE  -
-$
-$ zpool get autoexpand zvol0
-NAME   PROPERTY    VALUE   SOURCE
-zvol0  autoexpand  off     default
-$
-$ zpool set autoexpand=on zvol0
-$
-$ zpool get autoexpand zvol0
-NAME   PROPERTY    VALUE   SOURCE
-zvol0  autoexpand  on      local
-$
-$ zpool list zvol0
-NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
-zvol0  1.81T  1.49T   333G        -     3.62T     5%    82%  1.00x    ONLINE  -
-$
-$ zpool online -e zvol0
-missing device name
-usage:
-        online [-e] <pool> <device> ...
-$
-$ zpool online -e zvol0 gpt/sdisk1
-$
-$ zpool list zvol0
-NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
-zvol0  5.45T  1.49T  3.97T        -         -     1%    27%  1.00x    ONLINE  -
-$
-```
-
-
-参考データ
-```
-minmin@primergy(0)$ zpool status zvol0
-  pool: zvol0
- state: ONLINE
-  scan: resilvered 1.49T in 06:49:36 with 0 errors on Mon Jan 30 17:58:41 2023
-config:
-
-        NAME            STATE     READ WRITE CKSUM
-        zvol0           ONLINE       0     0     0
-          mirror-0      ONLINE       0     0     0
-            gpt/ndisk2  ONLINE       0     0     0
-            gpt/ndisk1  ONLINE       0     0     0
-
-errors: No known data errors
-minmin@primergy(0)$
-```
