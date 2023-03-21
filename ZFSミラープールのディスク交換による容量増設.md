@@ -350,9 +350,9 @@ $
 
 # 領域の拡張
 
-HDDの交換は終わりましたが、もう一つ作業が残っています。というのはこのままではHDDの交換だけで、2TB→6TBの容量拡張が有効になっていません。
+交換は終わりましたが、まだやるべきことが一つ残っています。というのはこのままではディスクを交換しただけで、2TB→6TBの容量の拡張が有効になっていません。
 
-あらためてzvol0の容量を確認するとSIZEは1.81Tと、HDD交換前と同じ数字を示しています。しかしEXPANSZに3.62Tと表示されている通り、あと3.62TB拡張できることを示しています。
+あらためてzvol0の容量を確認するとSIZEは1.81Tと、交換前と同じ数字を示しています。しかしよく見るとEXPANSZに3.62Tと表示されていて、あと3.62TB拡張できることを示しています。
 
 ```
 $ zpool list zvol0
@@ -361,7 +361,7 @@ zvol0  1.81T  1.49T   333G        -     3.62T     5%    82%  1.00x    ONLINE  -
 $
 ```
 
-この容量拡張を行うための設定がZFSプールのautoexpandプロパティです。まず現状のautoexpandの値を確認すると次のようにデフォルトのoffとなっています。
+この容量拡張を行う設定がZFSプールのautoexpandプロパティです。まず現状のautoexpandの値を確認すると次のようにデフォルトのoffとなっています。
 
 ```
 $ zpool get autoexpand zvol0
@@ -370,22 +370,25 @@ zvol0  autoexpand  off     default
 $
 ```
 
-それではautoexpandをonにしてみます。でもautoexpandをonにしただけでは容量は変わりません。
+それではautoexpandをonにしてみます。
+
 
 ```
 $ zpool set autoexpand=on zvol0
-$
 $ zpool get autoexpand zvol0
 NAME   PROPERTY    VALUE   SOURCE
 zvol0  autoexpand  on      local
 $
+```
+しかしautoexpandをonにしただけでは容量は変わりません。
+```
 $ zpool list zvol0
 NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
 zvol0  1.81T  1.49T   333G        -     3.62T     5%    82%  1.00x    ONLINE  -
 $
 ```
 
-autoexpand=onのにしたうえで、容量を拡張するためには`zpool online -e`を実行する必要があります。
+容量を拡張するためにはautoexpand=onにしたうえで、`zpool online -e`を実行する必要があります。
 
 ```
 $ zpool online -e zvol0
@@ -394,9 +397,9 @@ usage:
         online [-e] <pool> <device> ...
 $
 ```
-デバイス名が無いと言われてしまいました😅。
-online -e のときは一緒にデバイス名を指定する必要があるのですが、今回の場合はプール内のデバイス名のどれか1つを指定すれば問題ありません。
-あらためてデバイス名まで指定して実行すると、次のように容量が5.45TBまで増えていることがわかります。
+デバイス名の指定を忘れてエラーになりました😅が、本来の`zpool online`であればデバイス名の指定が必須なのは当然として、`-e`オプションのときはデバイス名の指定は無くてもよさそうな気がします。それはともかく、`zpool online -e`ではプール内のデバイス名のどれか1つを指定すれば問題ありません。
+
+あらためてデバイス名を指定して実行すると、次のように容量が5.45TBまで増えました。
 
 ```
 $ zpool online -e zvol0 gpt/sdisk1
@@ -406,9 +409,14 @@ NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  AL
 zvol0  5.45T  1.49T  3.97T        -         -     1%    27%  1.00x    ONLINE  -
 $
 ```
-今回の作業ではautoexpandプロパティの変更をHDDの交換後に行いましたが、あらかじめ交換前に設定しておくと、2台目の同期完了と同時に容量が拡張されるようになります。
 
-# おまけ　HDDのSMRとCMRによる違い
+今回はautoexpandプロパティの変更をHDDの交換後に行いましたが、交換前に設定しておくと、2台目の同期完了と同時に容量が拡張されるようになります。またautoexpandはミラーだけでは無くraidz等の構成でも同様に利用できます。
+
+# 最後に
+
+
+
+# 付録　HDDのSMRとCMRによる違い
 
 今回交換したHDD(6TB)はSMRで、今まで使っていたHDDはCMR(当時SMRはまだ存在しない)でした。詳細は説明しませんが、SMRではその構造上大量データの連続書き込みがCMRに比べてどうしても遅くなる傾向にあり、ミラーの同期は大量データの連続書き込みが発生するため、SMRの苦手な処理の典型的な例ということになります。
 
