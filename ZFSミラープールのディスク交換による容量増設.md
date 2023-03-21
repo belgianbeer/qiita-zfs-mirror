@@ -335,14 +335,6 @@ config:
 errors: No known data errors
 $
 ```
-```
-$ zpool list
-NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
-zroot   228G  16.8G   211G        -         -    12%     7%  1.00x    ONLINE  -
-zvol0  1.81T  1.49T   333G        -     3.62T     5%    82%  1.00x    ONLINE  -
-$
-```
-
 
 # 領域の拡張
 
