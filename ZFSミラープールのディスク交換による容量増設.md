@@ -319,9 +319,7 @@ config:
 
 errors: No known data errors
 ```
-
-同期完了後の確認
-
+2回目の同期は14時間程でした。
 ```
 $ zpool status zvol0
   pool: zvol0
